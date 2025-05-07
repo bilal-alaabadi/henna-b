@@ -26,21 +26,31 @@ router.post("/uploadImages", async (req, res) => {
 // نقطة النهاية لإنشاء منتج
 router.post("/create-product", async (req, res) => {
   try {
-    const { name, category, description, price, oldPrice, image, color, author } = req.body;
+    const { name, category, description, price, regularPrice, image, author } = req.body;
 
     // تحقق من الحقول المطلوبة
-    if (!name || !category || !description || !price || !image || !author) {
+    if (!name || !category || !description || !image || !author) {
       return res.status(400).send({ message: "جميع الحقول المطلوبة يجب إرسالها" });
+    }
+
+    // تحقق من الأسعار بناءً على الفئة
+    if (category === 'حناء بودر') {
+      if (!price || !price['500 جرام'] || !price['1 كيلو']) {
+        return res.status(400).send({ message: "يجب إدخال سعرين للحناء بودر (500 جرام و1 كيلو)" });
+      }
+    } else {
+      if (!regularPrice) {
+        return res.status(400).send({ message: "يجب إدخال سعر المنتج" });
+      }
     }
 
     const newProduct = new Products({
       name,
       category,
       description,
-      price,
-      oldPrice,
-      image, // يجب أن تكون مصفوفة من روابط الصور
-      color,
+      price: category === 'حناء بودر' ? price : undefined,
+      regularPrice: category !== 'حناء بودر' ? regularPrice : undefined,
+      image,
       author,
     });
 
@@ -142,16 +152,16 @@ router.patch("/update-product/:id", verifyToken, verifyAdmin, async (req, res) =
     );
 
     if (!updatedProduct) {
-      return res.status(404).send({ message: "Product not found" });
+      return res.status(404).send({ message: "المنتج غير موجود" });
     }
 
     res.status(200).send({
-      message: "Product updated successfully",
+      message: "تم تحديث المنتج بنجاح",
       product: updatedProduct,
     });
   } catch (error) {
-    console.error("Error updating the product", error);
-    res.status(500).send({ message: "Failed to update the product" });
+    console.error("خطأ في تحديث المنتج:", error);
+    res.status(500).send({ message: "فشل في تحديث المنتج", error: error.message });
   }
 });
 
