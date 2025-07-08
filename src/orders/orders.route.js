@@ -48,8 +48,8 @@ router.post("/create-checkout-session", async (req, res) => {
             client_reference_id: Date.now().toString(),
             mode: "payment",
             products: lineItems,
-            success_url: "http://localhost:5173/success?client_reference_id="+Date.now().toString(),
-            cancel_url: "http://localhost:5173/cancel",
+            success_url: "https://www.henna-burgund.shop/success?client_reference_id="+Date.now().toString(),
+            cancel_url: "https://www.henna-burgund.shop/cancel",
         };
 
         const response = await axios.post(`${THAWANI_API_URL}/checkout/session`, data, {
