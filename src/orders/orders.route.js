@@ -12,7 +12,7 @@ const THAWANI_API_URL = process.env.THAWANI_API_URL;
 const publish_key="HGvTMLDssJghr9tlN9gr4DVYt0qyBy";
 
 const app = express();
-app.use(cors({ origin: "http://localhost:5173" }));
+app.use(cors({ origin: "https://www.henna-burgund.shop" }));
 app.use(express.json());
 
 // Create checkout session
