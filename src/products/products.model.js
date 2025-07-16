@@ -4,19 +4,9 @@ const ProductSchema = new mongoose.Schema(
   {
     name: { type: String, required: true },
     category: { type: String, required: true },
+    size: { type: String }, // إضافة حقل الحجم
     description: { type: String, required: true },
-    price: { 
-      type: {
-        "500 جرام": { type: Number },
-        "1 كيلو": { type: Number }
-      },
-      required: function() {
-        return this.category === 'حناء بودر';
-      }
-    },
-    regularPrice: { type: Number, required: function() {
-      return this.category !== 'حناء بودر';
-    }},
+    price: { type: Number, required: true }, // السعر العادي لجميع المنتجات
     image: { type: [String], required: true },
     rating: { type: Number, default: 0 },
     author: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }

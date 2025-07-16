@@ -26,44 +26,35 @@ router.post("/uploadImages", async (req, res) => {
 // نقطة النهاية لإنشاء منتج
 router.post("/create-product", async (req, res) => {
   try {
-    const { name, category, description, price, regularPrice, image, author } = req.body;
+    const { name, category, size, description, price, image, author } = req.body;
 
-    // تحقق من الحقول المطلوبة
-    if (!name || !category || !description || !image || !author) {
+    // التحقق من الحقول المطلوبة الأساسية
+    if (!name || !category || !description || !price || !image || !author) {
       return res.status(400).send({ message: "جميع الحقول المطلوبة يجب إرسالها" });
     }
 
-    // تحقق من الأسعار بناءً على الفئة
-    if (category === 'حناء بودر') {
-      if (!price || !price['500 جرام'] || !price['1 كيلو']) {
-        return res.status(400).send({ message: "يجب إدخال سعرين للحناء بودر (500 جرام و1 كيلو)" });
-      }
-    } else {
-      if (!regularPrice) {
-        return res.status(400).send({ message: "يجب إدخال سعر المنتج" });
-      }
+    // إذا كانت الفئة حناء بودر، نتحقق من وجود الحجم
+    if (category === 'حناء بودر' && !size) {
+      return res.status(400).send({ message: "يجب تحديد حجم الحناء" });
     }
 
-    const newProduct = new Products({
-      name,
+    // إنشاء كائن المنتج
+    const productData = {
+      name: category === 'حناء بودر' ? `${name} - ${size}` : name,
       category,
       description,
-      price: category === 'حناء بودر' ? price : undefined,
-      regularPrice: category !== 'حناء بودر' ? regularPrice : undefined,
+      price,
       image,
       author,
-    });
+    };
 
-    const savedProduct = await newProduct.save();
-
-    // حساب التقييمات إذا وجدت
-    const reviews = await Reviews.find({ productId: savedProduct._id });
-    if (reviews.length > 0) {
-      const totalRating = reviews.reduce((acc, review) => acc + review.rating, 0);
-      const averageRating = totalRating / reviews.length;
-      savedProduct.rating = averageRating;
-      await savedProduct.save();
+    // إضافة الحجم فقط لمنتجات الحناء
+    if (category === 'حناء بودر') {
+      productData.size = size;
     }
+
+    const newProduct = new Products(productData);
+    const savedProduct = await newProduct.save();
 
     res.status(201).send(savedProduct);
   } catch (error) {
@@ -77,6 +68,7 @@ router.get("/", async (req, res) => {
   try {
     const {
       category,
+      size,
       color,
       minPrice,
       maxPrice,
@@ -88,6 +80,11 @@ router.get("/", async (req, res) => {
 
     if (category && category !== "all") {
       filter.category = category;
+      
+      // إذا كانت الفئة حناء بودر وكان هناك حجم محدد
+      if (category === 'حناء بودر' && size) {
+        filter.size = size;
+      }
     }
 
     if (color && color !== "all") {
@@ -142,28 +139,102 @@ router.get("/:id", async (req, res) => {
 });
 
 // update a product
-router.patch("/update-product/:id", verifyToken, verifyAdmin, async (req, res) => {
-  try {
-    const productId = req.params.id;
-    const updatedProduct = await Products.findByIdAndUpdate(
-      productId,
-      { ...req.body },
-      { new: true }
-    );
+const multer = require('multer');
+const upload = multer();
 
-    if (!updatedProduct) {
-      return res.status(404).send({ message: "المنتج غير موجود" });
+router.patch("/update-product/:id", 
+    verifyToken, 
+    verifyAdmin, 
+    upload.single('image'),
+    async (req, res) => {
+        try {
+            const productId = req.params.id;
+            const isQuantityOnly = req.headers['x-quantity-update'] === 'true';
+            
+            let updateData = {
+                name: req.body.name,
+                category: req.body.category,
+                description: req.body.description,
+                quantity: req.body.quantity !== undefined ? Number(req.body.quantity) : undefined,
+                author: req.body.author,
+                gender: req.body.gender || null,
+                oldPrice: req.body.oldPrice || null
+            };
+
+            // إذا كان التحديث للكمية فقط
+            if (isQuantityOnly) {
+                updateData = { quantity: Number(req.body.quantity) };
+                
+                // التحقق من صحة الكمية
+                if (isNaN(updateData.quantity) || updateData.quantity < 0) {
+                    return res.status(400).send({ message: "الكمية يجب أن تكون رقمًا موجبًا" });
+                }
+                
+                const updatedProduct = await Products.findByIdAndUpdate(
+                    productId,
+                    { $set: updateData },
+                    { new: true, runValidators: true }
+                );
+
+                if (!updatedProduct) {
+                    return res.status(404).send({ message: "المنتج غير موجود" });
+                }
+
+                return res.status(200).send({
+                    message: "تم تحديث الكمية بنجاح",
+                    product: updatedProduct,
+                });
+            }
+
+            // التحديث الكامل للمنتج
+            // التحقق من الحقول المطلوبة
+            if (!updateData.name || !updateData.category || !req.body.price || !updateData.description) {
+                return res.status(400).send({ message: "جميع الحقول المطلوبة يجب إرسالها" });
+            }
+
+            // معالجة السعر حسب نوع المنتج
+            if (req.body.category === 'حناء بودر') {
+                updateData.price = {
+                    '500 جرام': req.body.size === '500 جرام' ? req.body.price : undefined,
+                    '1 كيلو': req.body.size === '1 كيلو' ? req.body.price : undefined
+                };
+                updateData.size = req.body.size;
+            } else {
+                updateData.regularPrice = req.body.price;
+                updateData.price = undefined; // تأكيد إزالة حقل price للمنتجات العادية
+            }
+
+            // إضافة الصورة إذا تم تحميلها
+            if (req.file) {
+                updateData.image = req.file.path;
+            }
+
+            // إزالة الحقول غير المعرفة
+            Object.keys(updateData).forEach(key => updateData[key] === undefined && delete updateData[key]);
+
+            const updatedProduct = await Products.findByIdAndUpdate(
+                productId,
+                { $set: updateData },
+                { new: true, runValidators: true }
+            );
+
+            if (!updatedProduct) {
+                return res.status(404).send({ message: "المنتج غير موجود" });
+            }
+
+            res.status(200).send({
+                message: "تم تحديث المنتج بنجاح",
+                product: updatedProduct,
+            });
+        } catch (error) {
+            console.error("خطأ في تحديث المنتج", error);
+            res.status(500).send({ 
+                message: "فشل تحديث المنتج",
+                error: error.message
+            });
+        }
     }
-
-    res.status(200).send({
-      message: "تم تحديث المنتج بنجاح",
-      product: updatedProduct,
-    });
-  } catch (error) {
-    console.error("خطأ في تحديث المنتج:", error);
-    res.status(500).send({ message: "فشل في تحديث المنتج", error: error.message });
-  }
-});
+);
 
 // delete a product
 

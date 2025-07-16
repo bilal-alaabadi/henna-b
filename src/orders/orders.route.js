@@ -9,16 +9,15 @@ require("dotenv").config();
 
 const THAWANI_API_KEY = process.env.THAWANI_API_KEY; 
 const THAWANI_API_URL = process.env.THAWANI_API_URL;
-const publish_key="HGvTMLDssJghr9tlN9gr4DVYt0qyBy";
+const publish_key = "HGvTMLDssJghr9tlN9gr4DVYt0qyBy";
 
 const app = express();
 app.use(cors({ origin: "https://www.henna-burgund.shop" }));
 app.use(express.json());
 
 // Create checkout session
-
 router.post("/create-checkout-session", async (req, res) => {
-    const { products, email, customerName, customerPhone, wilayat } = req.body;
+    const { products, email, customerName, customerPhone, country, wilayat, description } = req.body;
     const shippingFee = 2; // رسوم الشحن الثابتة
 
     if (!Array.isArray(products) || products.length === 0) {
@@ -48,8 +47,8 @@ router.post("/create-checkout-session", async (req, res) => {
             client_reference_id: Date.now().toString(),
             mode: "payment",
             products: lineItems,
-            success_url: "https://www.henna-burgund.shop/success?client_reference_id="+Date.now().toString(),
-            cancel_url: "https://www.henna-burgund.shop/cancel",
+            success_url: "http://localhost:5173/success?client_reference_id="+Date.now().toString(),
+            cancel_url: "http://localhost:5173/cancel",
         };
 
         const response = await axios.post(`${THAWANI_API_URL}/checkout/session`, data, {
@@ -62,7 +61,7 @@ router.post("/create-checkout-session", async (req, res) => {
         const sessionId = response.data.data.session_id;
         const paymentLink = `https://uatcheckout.thawani.om/pay/${sessionId}?key=${publish_key}`;
 
-        // حفظ الطلب في قاعدة البيانات مع رسوم الشحن
+        // حفظ الطلب في قاعدة البيانات مع جميع البيانات
         const order = new Order({
             orderId: sessionId,
             products: products.map((product) => ({
@@ -73,7 +72,9 @@ router.post("/create-checkout-session", async (req, res) => {
             shippingFee: shippingFee,
             customerName,
             customerPhone,
+            country,
             wilayat,
+            description,
             email,
             status: "pending",
         });
@@ -89,7 +90,34 @@ router.post("/create-checkout-session", async (req, res) => {
         });
     }
 });
+// في ملف routes/orders.js
+router.get('/order-with-products/:orderId', async (req, res) => {
+    try {
+        const order = await Order.findById(req.params.orderId);
+        if (!order) return res.status(404).json({ error: 'Order not found' });
 
+        const products = await Promise.all(order.products.map(async item => {
+            const product = await Product.findById(item.productId);
+            return {
+                ...product.toObject(),
+                quantity: item.quantity,
+                selectedSize: item.selectedSize,
+                price: calculateProductPrice(product, item.quantity, item.selectedSize)
+            };
+        }));
+
+        res.json({ order, products });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+function calculateProductPrice(product, quantity, selectedSize) {
+    if (product.category === 'حناء بودر' && selectedSize && product.price[selectedSize]) {
+        return (product.price[selectedSize] * quantity).toFixed(2);
+    }
+    return (product.regularPrice * quantity).toFixed(2);
+}
 // Confirm payment
 router.post("/confirm-payment", async (req, res) => {
     const { client_reference_id } = req.body;
@@ -99,25 +127,24 @@ router.post("/confirm-payment", async (req, res) => {
     }
    
     try {
-            // Step 1: Get sessions from Thawani
-            const sessionsResponse = await axios.get(`${THAWANI_API_URL}/checkout/session/?limit=10&skip=0`, {
-                headers: {
-                    'Content-Type': 'application/json',
-                    'thawani-api-key': THAWANI_API_KEY,
-                },
-            });
+        // Step 1: Get sessions from Thawani
+        const sessionsResponse = await axios.get(`${THAWANI_API_URL}/checkout/session/?limit=10&skip=0`, {
+            headers: {
+                'Content-Type': 'application/json',
+                'thawani-api-key': THAWANI_API_KEY,
+            },
+        });
 
-            const sessions = sessionsResponse.data.data; // Extract sessions list
-         
-            // Step 2: Find the session matching client_reference_id
-            const session_ = sessions.find(s => s.client_reference_id === client_reference_id);
+        const sessions = sessionsResponse.data.data; // Extract sessions list
+     
+        // Step 2: Find the session matching client_reference_id
+        const session_ = sessions.find(s => s.client_reference_id === client_reference_id);
 
-            if (!session_) {
-                return res.status(404).json({ error: "Session not found" });
-            }
+        if (!session_) {
+            return res.status(404).json({ error: "Session not found" });
+        }
 
-            const session_id = session_.session_id; // Extract session_id
-
+        const session_id = session_.session_id; // Extract session_id
 
         const response = await axios.get(`${THAWANI_API_URL}/checkout/session/${session_id}?limit=1&skip=0`, {
             headers: {

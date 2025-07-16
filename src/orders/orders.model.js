@@ -13,13 +13,10 @@ const OrderSchema = new mongoose.Schema(
     shippingFee: { type: Number, required: true, default: 2 },
     customerName: { type: String, required: true },
     customerPhone: { type: String, required: true },
-    wilayat: { type: String, required: true },
+    country: { type: String, required: true }, // حقل البلد
+    wilayat: { type: String, required: true }, // حقل العنوان
+    description: { type: String }, // حقل الوصف (غير مطلوب)
     email: { type: String, required: true },
-    status: {
-      type: String,
-      enum: ["pending", "processing", "shipped", "completed"],
-      default: "pending",
-    },
   },
   { timestamps: true }
 );
